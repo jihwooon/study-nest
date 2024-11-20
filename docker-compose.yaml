@@ -1,0 +1,67 @@
+x-apps-common: &apps-common
+  profiles: ['apps']
+  environment:
+    - NODE_ENV=production
+  env_file: ./backend/.env.local
+  networks:
+    - default
+
+x-mysql-image: &mysql-image
+  image: mysql:8.0.22
+  platform: linux/amd64
+
+services:
+  applications:
+    <<: *apps-common
+    container_name: ${SERVICE_APPLICATIONS_HOST}
+    image: ${SERVICE_APPLICATIONS_HOST}
+    restart: unless-stopped
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3007:3000"
+    healthcheck:
+      test: ['CMD', 'curl', '-f', "http://localhost:${SERVICE_APPLICATIONS_HEALTH_PORT}/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+  mysql-database:
+    <<: *mysql-image
+    container_name: ${MYSQL_HOST}
+    environment:
+      TZ: Asia/Seoul
+      MYSQL_ROOT_USER: ${MYSQL_ROOT_USER}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3306:3306"
+    restart: unless-stopped
+    volumes:
+      - ./db/mysql/data:/var/lib/mysql --user 1000
+      - ./db/mysql/config:/etc/mysql/conf.d --user 1000
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_ROOT_USER}", "--password=${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+
+  apps-setup:
+      image: node:22-alpine
+      container_name: ${PROJECT_NAME}-apps-setup
+      profiles: ['apps']
+      depends_on:
+        applications:
+          condition: service_healthy
+        mysql-database:
+          condition: service_healthy
+
+networks:
+  default:
+    external: true
+    name: ${PROJECT_NAME}
