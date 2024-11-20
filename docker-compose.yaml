@@ -1,0 +1,91 @@
+x-logging: &default-logging
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-apps-common: &apps-common
+  profiles: ['apps']
+  logging: *default-logging
+  env_file: ./.env.local
+
+x-mysql-image: &mysql-image
+  image: mysql:8.0.22
+  platform: linux/amd64
+
+services:
+  mysql-database:
+    <<: *mysql-image
+    container_name: ${MYSQL_HOST}
+    environment:
+      TZ: Asia/Seoul
+      MYSQL_ROOT_USER: ${MYSQL_USER}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3334:3306"
+    restart: always
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "--password=${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+
+  applications:
+    <<: *apps-common
+    container_name: ${SERVICE_APPLICATIONS_HOST}
+    image: ${SERVICE_APPLICATIONS_HOST}
+    restart: always
+    build:
+      context: .
+      args:
+        - APP_NAME=applications
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./_output/logs/applications:/app/_output/logs
+    healthcheck:
+      test: ['CMD', 'curl', '-f', "http://localhost:${SERVICE_APPLICATIONS_HEALTH_PORT}/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      - mysql-database
+    networks:
+      - default
+
+  cores:
+    <<: *apps-common
+    container_name: ${SERVICE_CORES_HOST}
+    image: ${SERVICE_CORES_HOST}
+    restart: always
+    build:
+      context: .
+      args:
+        - APP_NAME=cores
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./_output/logs/cores:/app/_output/logs
+    healthcheck:
+      test: ['CMD', 'curl', '-f', "http://localhost:${SERVICE_CORES_HEALTH_PORT}/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      - mysql-database
+    networks:
+      - default
+
+networks:
+  default:
+    external: true
+    name: ${PROJECT_NAME}
+
+volumes:
+  mysql_data:
